@@ -20,23 +20,26 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module uart_tx(
+module uart_tx  #( parameter int ADDR_BITS = 2)(
     input logic clk,
     input logic rst,
     input logic tick,
     input logic tx_start,
     input logic [7:0] data_in,
+    input logic [ADDR_BITS-1:0] addr,
     output logic tx_out, 
     output logic tx_done_tick
     );
     
     
-    typedef enum {IDLE, START, DATA, STOP} state_t;
+    typedef enum {IDLE, START, ADDR, DATA, STOP} state_t;
     state_t state;
     
     logic [7:0] shift;
     logic [2:0] bit_count;
     logic [3:0] tick_count;
+    logic [ADDR_BITS-1:0] addr_shift;
+    logic [$clog2(ADDR_BITS) - 1:0] addr_count;
     
     always_ff @(posedge clk) begin
         tx_done_tick <= 1'b0;
@@ -47,11 +50,14 @@ module uart_tx(
             tick_count <= 0;
             tx_out <= 1'b1;
             tx_done_tick <= 1'b0;
+            addr_shift = 0;
+            addr_count = 0;
         
         end else if (state == IDLE) begin
             tx_out <= 1'b1;
             if (tx_start) begin
                 shift <= data_in;
+                addr_shift <= addr;
                 state <= START;
             end
         end else if (state == START) begin
@@ -61,7 +67,21 @@ module uart_tx(
                 if (tick_count == 4'b1111) begin
                     bit_count <= 1'b0;
                     tick_count <= 4'b0000;
-                    state <= DATA;
+                    addr_count <= 0;
+                    state <= ADDR;
+                end
+            end
+        end else if (state == ADDR) begin
+            tx_out <= addr_shift[0];
+            if (tick) begin
+                tick_count <= tick_count + 1;
+                if (tick_count == 4'b1111) begin
+                    tick_count <= 4'b0000;
+                    addr_shift <= addr_shift >> 1;
+                    addr_count <= addr_count + 1;
+                    if (addr_count == ADDR_BITS -1) begin
+                        state <= DATA;
+                    end
                 end
             end
         end else if (state == DATA) begin
